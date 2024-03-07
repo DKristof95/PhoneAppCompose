@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">PhoneAppCompose</string>
+    <string name="balance_buttonHUN">egyenleg</string>
+    <string name="number_buttonHUN">saját szám</string>
+</resources>
