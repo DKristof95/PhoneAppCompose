@@ -3,13 +3,20 @@ package com.wozavez.fmr.phoneappcompose
 import android.Manifest.permission.CALL_PHONE
 import android.annotation.SuppressLint
 import android.app.role.RoleManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.telecom.TelecomManager
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -38,6 +45,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -55,6 +66,7 @@ import com.wozavez.fmr.phoneappcompose.ui.theme.PhoneAppComposeTheme
 class DialerActivity : ComponentActivity() {
     @SuppressLint("SourceLockedOrientationActivity")
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         offerReplacingDefaultDialer()
         setContent {
@@ -74,6 +86,11 @@ class DialerActivity : ComponentActivity() {
         val interactionSourceBalance = remember { MutableInteractionSource() }
         val interactionSourceNumber = remember { MutableInteractionSource() }
         val interactionSourceBackspace = remember { MutableInteractionSource() }
+        val haptics = LocalHapticFeedback.current
+        View(LocalContext.current).isHapticFeedbackEnabled = true
+        val view = LocalView.current
+        view.isHapticFeedbackEnabled = true
+        val context = LocalContext.current
 
         LaunchedEffect(interactionSourceBalance) {
             var isLongClick = false
@@ -84,6 +101,7 @@ class DialerActivity : ComponentActivity() {
                         isLongClick = false
                         delay(viewConfiguration.longPressTimeoutMillis)
                         isLongClick = true
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         makeCall("*102#")
                     }
 
@@ -105,6 +123,7 @@ class DialerActivity : ComponentActivity() {
                         isLongClick = false
                         delay(viewConfiguration.longPressTimeoutMillis)
                         isLongClick = true
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         makeCall("*121#")
                     }
 
@@ -201,7 +220,15 @@ class DialerActivity : ComponentActivity() {
                         modifier = modifier
                     ) {
                         for (j in 1..3) {
-                            TextButton(onClick = { displayValue += i*3+j }) {
+                            TextButton(onClick = {
+                                val vibratorManager =
+                                    getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                vibratorManager.defaultVibrator.vibrate(VibrationEffect.createOneShot(500, 250))
+
+                                /*view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)*/
+                                displayValue += i*3+j
+                            }) {
                                 Text(text = (i*3+j).toString(), color = MaterialTheme.colorScheme.inverseSurface)
                             }
                         }

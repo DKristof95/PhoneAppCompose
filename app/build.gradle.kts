@@ -64,6 +64,4 @@ dependencies {
     implementation(libs.rxjava)
     implementation(libs.rxkotlin)
     debugImplementation(libs.androidx.ui.tooling)
-    implementation(libs.androidx.runtime.livedata)
-    implementation(libs.androidx.runtime.rxjava2)
 }

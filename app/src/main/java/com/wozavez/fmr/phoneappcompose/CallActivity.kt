@@ -1,13 +1,20 @@
 package com.wozavez.fmr.phoneappcompose
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Bundle
 import android.telecom.Call
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -16,9 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rxjava2.subscribeAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,47 +33,35 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import com.wozavez.fmr.phoneappcompose.ui.theme.PhoneAppComposeTheme
-import io.reactivex.rxjava3.disposables.CompositeDisposable
-import io.reactivex.rxjava3.kotlin.addTo
+import timber.log.Timber
 import java.util.Timer
-import java.util.concurrent.TimeUnit
+import kotlin.concurrent.timerTask
 
 class CallActivity : ComponentActivity() {
-    private val disposables = CompositeDisposable()
     private var number = ""
-    private val timer = Timer()
     private var isSpeakerOn = false
 
-
+    @SuppressLint("SourceLockedOrientationActivity")
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val viewModel: OngoingCallViewModel by viewModels()
         number = intent.data?.schemeSpecificPart ?: ""
         setContent {
             PhoneAppComposeTheme {
-                InCallUI()
+                InCallUI(viewModel)
             }
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-
-//        OngoingCall.state
-//            .subscribe(::phoneWithCallInfoDisplayAndButtons)
-//            .addTo(disposables)
-
-        OngoingCall.state
-            .filter { it == Call.STATE_DISCONNECTED }
-            .delay(1, TimeUnit.SECONDS)
-            .firstElement()
-            .subscribe { finish() }
-            .addTo(disposables)
-    }
-
     @Composable
-    fun PhoneWithCallInfoDisplayAndButtons(modifier: Modifier = Modifier) {
-        //val asd by OngoingCall.state.subscribeAsState()
+    fun PhoneWithCallInfoDisplayAndButtons(viewModel: OngoingCallViewModel, modifier: Modifier = Modifier) {
+        var selected by remember { mutableStateOf(false) }
+        val color = if (selected) Color.Red else Color.Gray
+
         Box (
             modifier = modifier
                 .fillMaxSize()
@@ -79,19 +72,71 @@ class CallActivity : ComponentActivity() {
                 modifier = modifier,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = number)
+                if (viewModel.state == Call.STATE_ACTIVE || viewModel.state == Call.STATE_DISCONNECTING || viewModel.state == Call.STATE_DISCONNECTED) {
 
-                Button(
-                    colors = ButtonDefaults.buttonColors(Color.Red),
-                    onClick = {
-                        OngoingCall.hangup()
-                        finish()
-                    }) {
-                    Icon(
-                        tint = Color.White,
-                        painter = painterResource(R.drawable.baseline_call_end_24),
-                        contentDescription = "make call"
-                    )
+                    Text(text = buildString {
+                        if (viewModel.time >= 3600) append((viewModel.time/3600).toString() + ":") // hours
+                        append((viewModel.time%3600)/600) // 10 minutes
+                        append((viewModel.time%600)/60) // minutes
+                        append(":")
+                        append((viewModel.time%60)/10) // 10 seconds
+                        append(viewModel.time%10) // seconds
+                    })
+                }
+                Text(text = viewModel.state.asString())
+                Text(text = number)
+                
+                Row {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(color),
+                        onClick = {
+                            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+                            audioManager.setMode(AudioManager.MODE_IN_CALL)
+
+                            if (isSpeakerOn) {
+                                audioManager.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                                    ?.let {
+                                        Timber.d("changed to earpiece")
+                                        val result = audioManager.setCommunicationDevice(it)
+                                        Timber.d(result.toString() + " " + audioManager.communicationDevice.toString())
+                                    }
+                                selected = false
+                                isSpeakerOn = false
+                            } else {
+                                audioManager.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                                    ?.let {
+                                        Timber.d("changed to speaker")
+                                        val result = audioManager.setCommunicationDevice(it)
+                                        Timber.d(result.toString() + " " + audioManager.communicationDevice.toString())
+                                    }
+                                selected = true
+                                isSpeakerOn = true
+                            }
+
+                        }) {
+                        Icon(
+                            tint = Color.White,
+                            painter = painterResource(R.drawable.baseline_speaker_24),
+                            contentDescription = "turn on speaker"
+                        )
+                    }
+                    
+                    Button(
+                        colors = ButtonDefaults.buttonColors(Color.Red),
+                        onClick = {
+                            viewModel.hangup()
+
+                            val timer = Timer()
+                            timer.schedule(timerTask {
+                                finish()
+                            }, 2000)
+                        }) {
+                        Icon(
+                            tint = Color.White,
+                            painter = painterResource(R.drawable.baseline_call_end_24),
+                            contentDescription = "end call"
+                        )
+                    }
                 }
             }
         }
@@ -99,15 +144,10 @@ class CallActivity : ComponentActivity() {
 
     @Preview(showBackground = true)
     @Composable
-    fun InCallUI() {
+    fun InCallUI(@PreviewParameter(SampleOngoingCallViewModel::class) viewModel:OngoingCallViewModel) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            PhoneWithCallInfoDisplayAndButtons()
+            PhoneWithCallInfoDisplayAndButtons(viewModel)
         }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        disposables.clear()
     }
 
     companion object {
